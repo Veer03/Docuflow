@@ -1,0 +1,13 @@
+# Python junk files
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# React / Node junk files
+node_modules/
+dist/
+.env
+
+# Local IDE files
+.vscode/
+.DS_Store
