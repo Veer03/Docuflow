@@ -1,6 +1,11 @@
 import PropTypes from "prop-types";
 function Student(props) {
+  //..........
+  const notStudentMess = <h1>Sorry, {props.name} is not a student.</h1>;
   //props
+  if (!props.isStudent) {
+    return <div>{notStudentMess}</div>;
+  }
   return (
     <div className="student-card">
       <p>Name: {props.name}</p>
