@@ -4,6 +4,7 @@ import Card from "./Card";
 import Button from "./Button/Button";
 import Student from "./Student";
 import List from "./List";
+import MyComponent from "./MyComponent";
 
 function App() {
   const fruits = [
@@ -24,6 +25,7 @@ function App() {
     <>
       <Header></Header>
       <Card />
+      <MyComponent />
       <br />
       <Student name="SpongeBob" age={30} isStudent={true} />
       <Student name="Patrick" age={40} isStudent={false} />
