@@ -1,0 +1,63 @@
+.splitter-container {
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.back-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: bold;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.text-input {
+  padding: 5px;
+  width: 100%;
+}
+
+.form-group-color {
+  margin-bottom: 20px;
+}
+
+.form-group-color label {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.color-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.color-input {
+  width: 50px;
+  height: 35px;
+  cursor: pointer;
+}
+
+.submit-btn {
+  padding: 8px 15px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.status-text {
+  margin-top: 15px;
+  font-weight: bold;
+}
