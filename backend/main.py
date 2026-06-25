@@ -43,6 +43,7 @@ def apply_excel_theme(buffer):
 
 @app.post("/api/split")
 async def split_excel(
+
     file: UploadFile = File(...), 
     split_column: str = Form(...)
 ):
@@ -102,3 +103,11 @@ async def split_excel(
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=split_files.zip"}
     )
+@app.post("/api/columns")
+async def get_excel_columns(file: UploadFile = File(...)):
+    contents = await file.read()
+    try:
+        df = pd.read_excel(BytesIO(contents), engine='openpyxl', nrows=0)
+        return {"columns": list(df.columns)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Excel file: {str(e)}")

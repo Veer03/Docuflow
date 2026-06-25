@@ -1,18 +1,54 @@
 import { useState } from "react";
 import "./ExcelSplitter.css";
+
 function ExcelSplitter({ onBack }) {
   const [file, setFile] = useState(null);
-  const [columnName, setColumnName] = useState("name");
+  const [columns, setColumns] = useState([]); // Dynamic columns array
+  const [selectedColumn, setSelectedColumn] = useState("");
   const [headerColor, setHeaderColor] = useState("#2e7d32");
   const [status, setStatus] = useState("");
 
-  function handleFileChange(e) {
-    setFile(e.target.files[0]);
+  // Triggered instantly when a file is picked
+  async function handleFileChange(e) {
+    const pickedFile = e.target.files[0];
+    if (!pickedFile) return;
+
+    setFile(pickedFile);
+    setStatus("Reading sheet columns...");
+    setColumns([]);
+    setSelectedColumn("");
+
+    const formData = new FormData();
+    formData.append("file", pickedFile);
+
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/columns", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        setStatus("Could not read columns from this file ❌");
+        return;
+      }
+
+      const data = await res.json();
+      //here!
+      setColumns(data.columns);
+
+      if (data.columns.length > 0) {
+        setSelectedColumn(data.columns[0]);
+      }
+      setStatus("File loaded successfully! Select a column below. ✅");
+    } catch (err) {
+      console.error(err);
+      setStatus("Error fetching spreadsheet metadata");
+    }
   }
 
   async function handleUpload() {
-    if (!file) {
-      setStatus("Pick a file first ❌");
+    if (!file || !selectedColumn) {
+      setStatus("Pick a file and a split column first ❌");
       return;
     }
 
@@ -20,7 +56,7 @@ function ExcelSplitter({ onBack }) {
 
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("split_column", columnName);
+    formData.append("split_column", selectedColumn);
     formData.append("header_color", headerColor);
 
     try {
@@ -72,13 +108,28 @@ function ExcelSplitter({ onBack }) {
       </div>
 
       <div className="form-group">
-        <label>Target Column Name:</label>
-        <input
-          type="text"
-          value={columnName}
-          onChange={(e) => setColumnName(e.target.value)}
-          className="text-input"
-        />
+        <label>Target Split Column:</label>
+        {columns.length > 0 ? (
+          <select
+            value={selectedColumn}
+            onChange={(e) => setSelectedColumn(e.target.value)}
+            className="text-input"
+            style={{ padding: "6px", cursor: "pointer" }}
+          >
+            {columns.map((col, idx) => (
+              <option key={idx} value={col}>
+                {col}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            placeholder="Upload a file to see columns..."
+            disabled
+            className="text-input"
+          />
+        )}
       </div>
 
       <div className="form-group-color">
@@ -94,7 +145,11 @@ function ExcelSplitter({ onBack }) {
         </div>
       </div>
 
-      <button onClick={handleUpload} className="submit-btn">
+      <button
+        onClick={handleUpload}
+        className="submit-btn"
+        disabled={!selectedColumn}
+      >
         Split it
       </button>
 
