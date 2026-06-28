@@ -4,10 +4,11 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import App from "./App.jsx";
 import ExcelSplitter from "./ExcelSplitter.jsx";
 import "./index.css";
+import WordToPdf from "./WordToPdf.jsx";
 
 const router = createBrowserRouter([
   {
-    path: "/", // The index root path
+    path: "/",
     element: <App />,
   },
   {
@@ -16,7 +17,7 @@ const router = createBrowserRouter([
   },
   {
     path: "/wordToPdf",
-    element: <wToP />,
+    element: <WordToPdf />,
   },
 ]);
 

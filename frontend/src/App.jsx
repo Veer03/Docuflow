@@ -31,14 +31,18 @@ function App() {
             </p>
           </Link>
 
-          <div className="card disabled-card">
-            <div className="counter locked-tag">Coming Soon</div>
+          <Link
+            to={"/wordToPdf"}
+            className="card interactive-card"
+            style={{ textDecoration: "none", color: "inherit" }}
+          >
+            <div className="counter text-tag">Coming Soon</div>
             <h3 className="card-heading">Convert PDF into Word</h3>
             <p className="card-text">
               Extract and format rich layout text structures directly from
               read-only PDF sheets into editable `.docx` files.
             </p>
-          </div>
+          </Link>
         </div>
       </div>
     </div>
