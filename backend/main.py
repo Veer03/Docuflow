@@ -1,11 +1,14 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-import pandas as pd
-from io import BytesIO
+import os
+import shutil
 import zipfile
-# Import openpyxl styles to color the actual Excel cells
-from openpyxl.styles import PatternFill, Font, Alignment
+import pandas as pd
+import openpyxl
+from copy import copy
+from io import BytesIO
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, FileResponse
+from docx2pdf import convert
 
 app = FastAPI()
 
@@ -17,92 +20,141 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def apply_excel_theme(buffer):
+TEMP_DIR = "temp_files"
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+
+def remove_file(path: str):
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+            print(f"Cleaned up: {path}")
+    except Exception as e:
+        print(f"Cleanup failed for {path}: {str(e)}")
+
+
+def write_group_to_buffer(source_ws, group_df, header_row=0):
+    """Copies rows preserving original cell formatting, colors, number formats."""
+    new_wb = openpyxl.Workbook()
+    new_ws = new_wb.active
+
+    # copy header row(s) with original styles
+    for r in range(1, header_row + 2):
+        src_row = list(source_ws.iter_rows(min_row=r, max_row=r))[0]
+        for col_idx, cell in enumerate(src_row, 1):
+            new_cell = new_ws.cell(row=r, column=col_idx, value=cell.value)
+            if cell.has_style:
+                new_cell.font = copy(cell.font)
+                new_cell.fill = copy(cell.fill)
+                new_cell.border = copy(cell.border)
+                new_cell.alignment = copy(cell.alignment)
+                new_cell.number_format = cell.number_format
+
+    # copy column widths
+    for col_letter, dim in source_ws.column_dimensions.items():
+        new_ws.column_dimensions[col_letter].width = dim.width
+
+    # write data rows
+    data_start_row = header_row + 2
+    for row_offset, (_, data_row) in enumerate(group_df.iterrows()):
+        new_row_idx = data_start_row + row_offset
+        for col_idx, value in enumerate(data_row, 1):
+            src_cell = source_ws.cell(row=new_row_idx, column=col_idx)
+            new_cell = new_ws.cell(row=new_row_idx, column=col_idx, value=value)
+            if src_cell.has_style:
+                new_cell.font = copy(src_cell.font)
+                new_cell.fill = copy(src_cell.fill)
+                new_cell.border = copy(src_cell.border)
+                new_cell.alignment = copy(src_cell.alignment)
+                new_cell.number_format = src_cell.number_format
+
+    buffer = BytesIO()
+    new_wb.save(buffer)
     buffer.seek(0)
-    # Re-open the Excel file in memory using openpyxl
-    import openpyxl
-    wb = openpyxl.load_workbook(buffer)
-    ws = wb.active
+    return buffer
 
-    # Create corporate green fill and white bold text
-    green_fill = PatternFill(start_color="2E7D32", end_color="2E7D32", fill_type="solid")
-    white_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-    center_align = Alignment(horizontal="center", vertical="center")
 
-    # Apply the styling specifically to the first row (the headers)
-    for cell in ws[1]:
-        cell.fill = green_fill
-        cell.font = white_font
-        cell.alignment = center_align
+@app.post("/api/inspect")
+async def inspect_excel(
+    file: UploadFile = File(...),
+    sheet: str = Form(None),
+    header_row: int = Form(0)
+):
+    contents = await file.read()
+    try:
+        xl = pd.ExcelFile(BytesIO(contents))
+        sheets = xl.sheet_names
+        target_sheet = sheet if sheet else sheets[0]
+        df = xl.parse(target_sheet, header=header_row)
+        columns = list(df.columns)
+        return {"sheets": sheets, "columns": columns}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Excel file: {str(e)}")
 
-    # Save it right back into a new buffer
-    output_buffer = BytesIO()
-    wb.save(output_buffer)
-    output_buffer.seek(0)
-    return output_buffer
 
 @app.post("/api/split")
 async def split_excel(
-
-    file: UploadFile = File(...), 
-    split_column: str = Form(...)
+    file: UploadFile = File(...),
+    split_column: str = Form(...),
+    sheet: str = Form(None),
+    header_row: int = Form(0),
+    header_color: str = Form("#a855f7")
 ):
-    columnList = list(df.columns)
     contents = await file.read()
     split_column = split_column.strip()
-    
+
     try:
-        df = pd.read_excel(BytesIO(contents), engine='openpyxl')
+        xl = pd.ExcelFile(BytesIO(contents))
+        target_sheet = sheet if sheet else xl.sheet_names[0]
+        df = pd.read_excel(
+            BytesIO(contents),
+            sheet_name=target_sheet,
+            header=header_row,
+            engine='openpyxl'
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid Excel file: {str(e)}")
 
     if split_column not in df.columns:
         raise HTTPException(
-            status_code=400, 
-            detail=f"Column '{split_column}' not found. Available columns: {columnList}"
+            status_code=400,
+            detail=f"Column '{split_column}' not found. Available: {list(df.columns)}"
         )
+
+    # load source workbook to copy styles from
+    source_wb = openpyxl.load_workbook(BytesIO(contents))
+    source_ws = source_wb[target_sheet]
 
     grouped = df.groupby(split_column)
     unique_keys = list(grouped.groups.keys())
 
-    # Case A: One unique group
+    # single group — return as direct file download
     if len(unique_keys) == 1:
         key = unique_keys[0]
         group_df = grouped.get_group(key)
-        
-        excel_buffer = BytesIO()
-        group_df.to_excel(excel_buffer, index=False, engine='openpyxl')
-        
-        # Apply the true green Excel formatting
-        final_buffer = apply_excel_theme(excel_buffer)
-        
+        final_buffer = write_group_to_buffer(source_ws, group_df, header_row)
         return StreamingResponse(
             final_buffer,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename={key}.xlsx"}
         )
 
-    # Case B: Muultiple groups -> ZIP package
+    # multiple groups — zip them all
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         for group_name, group_df in grouped:
             safe_name = str(group_name).replace("/", "_").replace("\\", "_")
-            
-            excel_buffer = BytesIO()
-            group_df.to_excel(excel_buffer, index=False, engine='openpyxl')
-            
-            # Apply the true green Excel formatting to this sheet
-            final_buffer = apply_excel_theme(excel_buffer)
-            
+            final_buffer = write_group_to_buffer(source_ws, group_df, header_row)
             zip_file.writestr(f"{safe_name}.xlsx", final_buffer.getvalue())
 
     zip_buffer.seek(0)
-
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=split_files.zip"}
     )
+
+
 @app.post("/api/columns")
 async def get_excel_columns(file: UploadFile = File(...)):
     contents = await file.read()
@@ -111,3 +163,33 @@ async def get_excel_columns(file: UploadFile = File(...)):
         return {"columns": list(df.columns)}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid Excel file: {str(e)}")
+
+
+@app.post("/api/word-to-pdf")
+async def word_to_pdf(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...)
+):
+    if not file.filename.endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Please upload a valid .docx file.")
+
+    input_docx_path = os.path.join(TEMP_DIR, file.filename)
+    output_pdf_path = os.path.join(TEMP_DIR, file.filename.replace(".docx", ".pdf"))
+
+    try:
+        with open(input_docx_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        convert(input_docx_path, output_pdf_path)
+        background_tasks.add_task(remove_file, output_pdf_path)
+        return FileResponse(
+            path=output_pdf_path,
+            media_type="application/pdf",
+            filename=os.path.basename(output_pdf_path)
+        )
+    except Exception as e:
+        if os.path.exists(output_pdf_path):
+            os.remove(output_pdf_path)
+        raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
+    finally:
+        if os.path.exists(input_docx_path):
+            os.remove(input_docx_path)
