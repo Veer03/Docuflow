@@ -6,6 +6,7 @@ function WordToPdf() {
   const navigate = useNavigate();
   const [file, setFile] = useState(null);
   const [status, setStatus] = useState("");
+  const API = import.meta.env.VITE_API_URL;
 
   function handleFileChange(e) {
     const pickedFile = e.target.files[0];
@@ -29,7 +30,7 @@ function WordToPdf() {
     formData.append("file", file);
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/word-to-pdf", {
+      const res = await fetch(`${API}/api/word-to-pdf`, {
         method: "POST",
         body: formData,
       });

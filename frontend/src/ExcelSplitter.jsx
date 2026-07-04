@@ -11,6 +11,7 @@ function ExcelSplitter() {
   const [selectedColumn, setSelectedColumn] = useState("");
   const [headerRow, setHeaderRow] = useState(0);
   const [status, setStatus] = useState("");
+  const API = import.meta.env.VITE_API_URL;
 
   // shared inspect helper — reused by file change, sheet change, and header row change
   async function inspectFile(pickedFile, sheet = null, header = 0) {
@@ -19,7 +20,7 @@ function ExcelSplitter() {
     if (sheet) formData.append("sheet", sheet);
     formData.append("header_row", header);
 
-    const res = await fetch("http://127.0.0.1:8000/api/inspect", {
+    const res = await fetch(`${API}/api/inspect`, {
       method: "POST",
       body: formData,
     });
@@ -107,7 +108,7 @@ function ExcelSplitter() {
     formData.append("header_color", "#a855f7");
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/split", {
+      const res = await fetch(`${API}/api/split`, {
         method: "POST",
         body: formData,
       });

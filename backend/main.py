@@ -3,11 +3,11 @@ import shutil
 import zipfile
 import pandas as pd
 import openpyxl
+from copy import copy
 from io import BytesIO
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
-from openpyxl.styles import PatternFill, Font, Alignment
 from docx2pdf import convert
 
 app = FastAPI()
@@ -33,30 +33,52 @@ def remove_file(path: str):
         print(f"Cleanup failed for {path}: {str(e)}")
 
 
-def apply_excel_theme(buffer, hex_color="A855F7"):
+def write_group_to_buffer(source_ws, group_df, header_row=0):
+    """Copies rows preserving original cell formatting, colors, number formats."""
+    new_wb = openpyxl.Workbook()
+    new_ws = new_wb.active
+
+    # copy header row(s) with original styles
+    for r in range(1, header_row + 2):
+        src_row = list(source_ws.iter_rows(min_row=r, max_row=r))[0]
+        for col_idx, cell in enumerate(src_row, 1):
+            new_cell = new_ws.cell(row=r, column=col_idx, value=cell.value)
+            if cell.has_style:
+                new_cell.font = copy(cell.font)
+                new_cell.fill = copy(cell.fill)
+                new_cell.border = copy(cell.border)
+                new_cell.alignment = copy(cell.alignment)
+                new_cell.number_format = cell.number_format
+
+    # copy column widths
+    for col_letter, dim in source_ws.column_dimensions.items():
+        new_ws.column_dimensions[col_letter].width = dim.width
+
+    # write data rows
+    data_start_row = header_row + 2
+    for row_offset, (_, data_row) in enumerate(group_df.iterrows()):
+        new_row_idx = data_start_row + row_offset
+        for col_idx, value in enumerate(data_row, 1):
+            src_cell = source_ws.cell(row=new_row_idx, column=col_idx)
+            new_cell = new_ws.cell(row=new_row_idx, column=col_idx, value=value)
+            if src_cell.has_style:
+                new_cell.font = copy(src_cell.font)
+                new_cell.fill = copy(src_cell.fill)
+                new_cell.border = copy(src_cell.border)
+                new_cell.alignment = copy(src_cell.alignment)
+                new_cell.number_format = src_cell.number_format
+
+    buffer = BytesIO()
+    new_wb.save(buffer)
     buffer.seek(0)
-    wb = openpyxl.load_workbook(buffer)
-    ws = wb.active
-    clean_hex = hex_color.replace("#", "")
-    header_fill = PatternFill(start_color=clean_hex, end_color=clean_hex, fill_type="solid")
-    white_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-    center_align = Alignment(horizontal="center", vertical="center")
-    for cell in ws[1]:
-        cell.fill = header_fill
-        cell.font = white_font
-        cell.alignment = center_align
-    output_buffer = BytesIO()
-    wb.save(output_buffer)
-    output_buffer.seek(0)
-    return output_buffer
+    return buffer
 
 
-# ─── NEW: inspect endpoint — returns sheet names + columns for a given sheet ───
 @app.post("/api/inspect")
 async def inspect_excel(
     file: UploadFile = File(...),
     sheet: str = Form(None),
-    header_row: int = Form(0)  # 0 = row 1, 1 = row 2
+    header_row: int = Form(0)
 ):
     contents = await file.read()
     try:
@@ -70,12 +92,10 @@ async def inspect_excel(
         raise HTTPException(status_code=400, detail=f"Invalid Excel file: {str(e)}")
 
 
-# ─── UPDATED: split now accepts sheet name ───
 @app.post("/api/split")
 async def split_excel(
     file: UploadFile = File(...),
     split_column: str = Form(...),
-
     sheet: str = Form(None),
     header_row: int = Form(0),
     header_color: str = Form("#a855f7")
@@ -86,7 +106,12 @@ async def split_excel(
     try:
         xl = pd.ExcelFile(BytesIO(contents))
         target_sheet = sheet if sheet else xl.sheet_names[0]
-        df = pd.read_excel(BytesIO(contents), sheet_name=target_sheet, header =header_row, engine='openpyxl')
+        df = pd.read_excel(
+            BytesIO(contents),
+            sheet_name=target_sheet,
+            header=header_row,
+            engine='openpyxl'
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid Excel file: {str(e)}")
 
@@ -96,28 +121,30 @@ async def split_excel(
             detail=f"Column '{split_column}' not found. Available: {list(df.columns)}"
         )
 
+    # load source workbook to copy styles from
+    source_wb = openpyxl.load_workbook(BytesIO(contents))
+    source_ws = source_wb[target_sheet]
+
     grouped = df.groupby(split_column)
     unique_keys = list(grouped.groups.keys())
 
+    # single group — return as direct file download
     if len(unique_keys) == 1:
         key = unique_keys[0]
         group_df = grouped.get_group(key)
-        excel_buffer = BytesIO()
-        group_df.to_excel(excel_buffer, index=False, engine='openpyxl')
-        final_buffer = apply_excel_theme(excel_buffer, header_color)
+        final_buffer = write_group_to_buffer(source_ws, group_df, header_row)
         return StreamingResponse(
             final_buffer,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f"attachment; filename={key}.xlsx"}
         )
 
+    # multiple groups — zip them all
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         for group_name, group_df in grouped:
             safe_name = str(group_name).replace("/", "_").replace("\\", "_")
-            excel_buffer = BytesIO()
-            group_df.to_excel(excel_buffer, index=False, engine='openpyxl')
-            final_buffer = apply_excel_theme(excel_buffer, header_color)
+            final_buffer = write_group_to_buffer(source_ws, group_df, header_row)
             zip_file.writestr(f"{safe_name}.xlsx", final_buffer.getvalue())
 
     zip_buffer.seek(0)
@@ -128,7 +155,6 @@ async def split_excel(
     )
 
 
-# ─── kept for backwards compat but inspect replaces this ───
 @app.post("/api/columns")
 async def get_excel_columns(file: UploadFile = File(...)):
     contents = await file.read()
