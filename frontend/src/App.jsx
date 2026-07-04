@@ -36,7 +36,7 @@ function App() {
             className="card interactive-card"
             style={{ textDecoration: "none", color: "inherit" }}
           >
-            <div className="counter text-tag">Coming Soon</div>
+            <div className="counter text-tag">File converter</div>
             <h3 className="card-heading">Convert PDF into Word</h3>
             <p className="card-text">
               Extract and format rich layout text structures directly from
