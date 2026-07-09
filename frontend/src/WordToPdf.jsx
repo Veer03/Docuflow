@@ -67,7 +67,7 @@ function WordToPdf() {
 
       <div className="workspace-panel">
         <div className="panel-header">
-          <h2>Word to PDF Converter</h2>
+          <h2>Word to PDF Converter(Not available rn!!)</h2>
           <p>
             Lock layout structures, graphics, and text alignments into secure
             PDF blocks.
