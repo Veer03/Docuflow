@@ -5,6 +5,7 @@ import App from "./App.jsx";
 import ExcelSplitter from "./ExcelSplitter.jsx";
 import "./index.css";
 import WordToPdf from "./WordToPdf.jsx";
+import QRCodeGenerator from "./QRCodeGenerator.jsx";
 
 const router = createBrowserRouter([
   {
@@ -18,6 +19,10 @@ const router = createBrowserRouter([
   {
     path: "/wordToPdf",
     element: <WordToPdf />,
+  },
+  {
+    path: "/generate-qr",
+    element: <QRCodeGenerator />,
   },
 ]);
 
