@@ -43,6 +43,17 @@ function App() {
               read-only PDF sheets into editable `.docx` files.
             </p>
           </Link>
+          <Link
+            to={"/generate-qr"}
+            className="card interactive-card"
+            style={{ textDecoration: "none", color: "inherit" }}
+          >
+            <div className="counter text-tag">QR Code</div>
+            <h3 className="card-heading">Generate QR Code</h3>
+            <p className="card-text">
+              Create scannable QR codes for any URL or text input.
+            </p>
+          </Link>
         </div>
       </div>
     </div>

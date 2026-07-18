@@ -1,8 +1,10 @@
+import io
 import os
 import shutil
 import zipfile
 import pandas as pd
 import openpyxl
+import qrcode
 from copy import copy
 from io import BytesIO
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
@@ -16,6 +18,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
+        "http://127.0.0.1:5173",
         "https://docuflow-woad.vercel.app"
     ],
     allow_credentials=True,
@@ -196,3 +199,43 @@ async def word_to_pdf(
     finally:
         if os.path.exists(input_docx_path):
             os.remove(input_docx_path)
+
+@app.post("/api/generate-qr")
+async def generate_qr(
+    url: str = Form(...), 
+    filename: str = Form("qrcode.png")
+):
+    try:
+        # Sanitize filename to prevent directory traversal if used in headers
+        safe_filename = "".join(c for c in filename if c.isalnum() or c in "._-")
+        if not safe_filename.endswith(".png"):
+            safe_filename += ".png"
+
+        # Generate QR code
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=10,
+            border=4
+        )
+        qr.add_data(url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+    
+        # Save to memory instead of disk
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+
+        return StreamingResponse(
+            buffer, 
+            media_type="image/png", 
+            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'}
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, 
+            detail=f"QR code generation failed: {str(e)}")
+    
+    
